@@ -14,6 +14,7 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const jitter = (base) => base + Math.floor(Math.random() * base * 0.4);
+  const log = (...args) => console.log('%c[ghostlist]', 'color:#1d9bf0;font-weight:bold', ...args);
 
   // ---- page-context bridge --------------------------------------------------
   const pending = new Map(); // reqId -> resolve
@@ -68,6 +69,7 @@
   async function runScan({ thresholdMonths }) {
     if (scanning) return;
     scanning = true;
+    log(`scan started — threshold ${thresholdMonths}+ months, url=${location.href}`);
     try {
       const libBase = (p) => chrome.runtime.getURL(`lib/${p}`);
       const { parseFollowing } = await import(libBase('parse-following.js'));
@@ -113,15 +115,27 @@
         return;
       }
 
+      const withInline = accounts.filter((a) => a.lastActivityAt).length;
+      log(`collected ${accounts.length} accounts; ${withInline} had inline activity`);
+
       // --- resolve activity for accounts without inline status ---
       const caps = await sendCmd('capabilities');
       const canReplay = Array.isArray(caps.ops) && caps.ops.includes('UserTweets');
+      log(`capabilities: templates=[${(caps.ops || []).join(', ') || 'none'}] canReplay=${canReplay}`);
 
       const needActivity = accounts.filter(
         (a) => !a.lastActivityAt && !a.protectedAccount && a.statusesCount !== 0
       );
+      log(`${needActivity.length} accounts need an activity lookup`);
+
+      if (!canReplay && needActivity.length) {
+        log('NO UserTweets template captured — open any profile once, then navigate to Following (no reload) and rescan. All posted accounts will be "unknown" this run.');
+        progress({ phase: 'activity', message: 'Couldn’t check activity (open a profile first — see console). Listing what we know.' });
+      }
 
       if (canReplay && needActivity.length) {
+        let ok = 0;
+        let failed = 0;
         for (let i = 0; i < needActivity.length; i++) {
           const a = needActivity[i];
           progress({
@@ -134,13 +148,26 @@
           const res = await sendCmd('replayUserTweets', { userId: a.restId, count: 20 });
           if (res && res.body) {
             try {
-              a.lastActivityAt = parseLatestActivity(JSON.parse(res.body));
-            } catch (_) { /* leave null -> unknown */ }
+              const json = JSON.parse(res.body);
+              const at = parseLatestActivity(json);
+              a.lastActivityAt = at;
+              if (at) ok++; else failed++;
+              if (i < 3) {
+                // Loud diagnostics for the first few so we can see X's actual reply.
+                log(`replay @${a.handle} (id ${a.restId}): http=${res.status} parsedActivity=${at || 'null'}`);
+                if (json && json.errors) log(`  X returned errors: ${JSON.stringify(json.errors).slice(0, 300)}`);
+              }
+            } catch (e) {
+              failed++;
+              if (i < 3) log(`replay @${a.handle}: body not JSON / parse error: ${e.message}; status=${res.status}; head=${String(res.body).slice(0, 120)}`);
+            }
+          } else {
+            failed++;
+            if (i < 3) log(`replay @${a.handle}: no body (error=${res && res.error}, timeout=${res && res.timeout}, status=${res && res.status})`);
           }
           await sleep(jitter(1100)); // be gentle on rate limits
         }
-      } else if (!canReplay) {
-        progress({ phase: 'activity', message: 'Activity API unavailable; using inline data only.' });
+        log(`activity resolution done: ${ok} resolved, ${failed} failed/empty`);
       }
 
       // --- classify + persist ---
@@ -158,6 +185,7 @@
         unknown: buckets.unknown,
       };
       await chrome.storage.local.set({ ghostlistResult: result });
+      log(`done — inactive=${result.counts.inactive} active=${result.counts.active} unknown=${result.counts.unknown} total=${result.counts.total}`);
       progress({ phase: 'done', ...result.counts });
       chrome.runtime.sendMessage({ type: 'GHOSTLIST_OPEN_RESULTS' }).catch(() => {});
     } catch (err) {

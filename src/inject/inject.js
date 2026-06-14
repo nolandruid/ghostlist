@@ -41,7 +41,14 @@
     // Only GET operations are safe/meaningful to replay.
     const method = (init && init.method ? String(init.method) : 'GET').toUpperCase();
     if (method !== 'GET') return;
-    templates[op] = { url, headers: headersToObject(init && init.headers), method };
+    const firstTime = !templates[op];
+    const headers = headersToObject(init && init.headers);
+    templates[op] = { url, headers, method };
+    if (firstTime) {
+      const hk = Object.keys(headers);
+      console.log('%c[ghostlist:inject]', 'color:#1d9bf0;font-weight:bold',
+        `captured ${op} request template (headers: ${hk.length ? hk.join(',') : 'NONE — replay will likely fail'})`);
+    }
   }
 
   function post(kind, payload) {
@@ -126,6 +133,10 @@
           credentials: 'include',
         });
         const body = await res.text();
+        if (res.status !== 200) {
+          console.log('%c[ghostlist:inject]', 'color:#f4212e;font-weight:bold',
+            `replay UserTweets http=${res.status} for userId=${d.userId}; head=${body.slice(0, 160)}`);
+        }
         post('replayResult', { reqId: d.reqId, op: 'UserTweets', userId: d.userId, body, status: res.status });
       } catch (err) {
         post('replayResult', { reqId: d.reqId, error: String(err && err.message || err) });
@@ -133,5 +144,6 @@
     }
   });
 
+  console.log('%c[ghostlist:inject]', 'color:#1d9bf0;font-weight:bold', 'interceptor active — watching X GraphQL traffic');
   post('ready', { ops: [] });
 })();
