@@ -1,0 +1,32 @@
+<!--
+  Synthetic snippet approximating X's Following-page DOM (data-testid="UserCell").
+  This is a BEST-GUESS structure for offline tests. Replace with a real captured
+  snippet (DevTools > copy outerHTML of a UserCell container) to harden selectors.
+-->
+<div aria-label="Timeline: Following">
+  <button data-testid="UserCell">
+    <a href="/active_amy" role="link"><img src="https://pbs.twimg.com/amy.jpg" alt="Active Amy"></a>
+    <a href="/active_amy" role="link"><span>Active Amy</span></a>
+    <span>@active_amy</span>
+    <div data-testid="userFollowIndicator"></div>
+  </button>
+
+  <button data-testid="UserCell">
+    <a href="/ghost_gary" role="link"><img src="https://pbs.twimg.com/gary.jpg" alt="Ghost Gary"></a>
+    <a href="/ghost_gary" role="link"><span>Ghost Gary</span></a>
+    <span>@ghost_gary</span>
+  </button>
+
+  <button data-testid="UserCell">
+    <a href="/private_pat" role="link"><img src="https://pbs.twimg.com/pat.jpg" alt="Private Pat"></a>
+    <a href="/private_pat" role="link"><span>Private Pat</span></a>
+    <svg aria-label="Protected account"></svg>
+    <span>@private_pat</span>
+  </button>
+
+  <!-- a "who to follow" promo cell that is NOT someone you follow; should still
+       parse as a user only if it is a UserCell. This one is a different testid. -->
+  <div data-testid="UserCell">
+    <a href="/i/connect_people" role="link"><span>Connect people</span></a>
+  </div>
+</div>

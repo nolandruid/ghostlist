@@ -1,0 +1,112 @@
+{
+  "data": {
+    "user": {
+      "result": {
+        "__typename": "User",
+        "timeline": {
+          "timeline": {
+            "instructions": [
+              {
+                "type": "TimelineClearCache"
+              },
+              {
+                "type": "TimelineAddEntries",
+                "entries": [
+                  {
+                    "entryId": "user-111",
+                    "content": {
+                      "itemContent": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "111",
+                            "is_blue_verified": true,
+                            "legacy": {
+                              "screen_name": "active_amy",
+                              "name": "Active Amy",
+                              "profile_image_url_https": "https://pbs.twimg.com/amy.jpg",
+                              "statuses_count": 5000,
+                              "protected": false,
+                              "verified": false,
+                              "status": { "created_at": "Mon Jun 02 12:00:00 +0000 2025" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "user-222",
+                    "content": {
+                      "itemContent": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "222",
+                            "legacy": {
+                              "screen_name": "ghost_gary",
+                              "name": "Ghost Gary",
+                              "profile_image_url_https": "https://pbs.twimg.com/gary.jpg",
+                              "statuses_count": 12,
+                              "protected": false,
+                              "verified": false,
+                              "status": { "created_at": "Tue Jan 10 09:30:00 +0000 2023" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "user-333",
+                    "content": {
+                      "itemContent": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "333",
+                            "legacy": {
+                              "screen_name": "private_pat",
+                              "name": "Private Pat",
+                              "statuses_count": 80,
+                              "protected": true,
+                              "verified": false
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "user-444",
+                    "content": {
+                      "itemContent": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "444",
+                            "legacy": {
+                              "screen_name": "never_ned",
+                              "name": "Never Ned",
+                              "statuses_count": 0,
+                              "protected": false,
+                              "verified": false
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "cursor-bottom-999",
+                    "content": { "value": "CURSOR_NEXT_PAGE", "cursorType": "Bottom" }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

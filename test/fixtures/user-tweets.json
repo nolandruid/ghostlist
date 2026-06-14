@@ -1,0 +1,73 @@
+{
+  "data": {
+    "user": {
+      "result": {
+        "__typename": "User",
+        "timeline_v2": {
+          "timeline": {
+            "instructions": [
+              {
+                "type": "TimelinePinEntry",
+                "entry": {
+                  "entryId": "tweet-PINNED-OLD",
+                  "content": {
+                    "itemContent": {
+                      "tweet_results": {
+                        "result": {
+                          "rest_id": "PINNED-OLD",
+                          "legacy": { "created_at": "Fri Jan 01 00:00:00 +0000 2021" }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "TimelineAddEntries",
+                "entries": [
+                  {
+                    "entryId": "tweet-NEWEST",
+                    "content": {
+                      "itemContent": {
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "TweetWithVisibilityResults",
+                            "tweet": {
+                              "rest_id": "NEWEST",
+                              "legacy": { "created_at": "Wed May 21 18:45:00 +0000 2025" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "tweet-OLDER",
+                    "content": {
+                      "itemContent": {
+                        "tweet_results": {
+                          "result": {
+                            "rest_id": "OLDER",
+                            "legacy": { "created_at": "Sun Feb 02 08:00:00 +0000 2025" }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "who-to-follow-XYZ",
+                    "content": { "itemContent": {} }
+                  },
+                  {
+                    "entryId": "cursor-bottom-111",
+                    "content": { "value": "NEXT" }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

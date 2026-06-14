@@ -1,0 +1,45 @@
+{
+  "data": {
+    "user": {
+      "result": {
+        "__typename": "User",
+        "timeline": {
+          "timeline": {
+            "instructions": [
+              {
+                "type": "TimelineAddEntries",
+                "entries": [
+                  {
+                    "entryId": "user-555",
+                    "content": {
+                      "itemContent": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "555",
+                            "is_blue_verified": false,
+                            "core": {
+                              "screen_name": "new_shape_nora",
+                              "name": "Nora New-Shape"
+                            },
+                            "avatar": { "image_url": "https://pbs.twimg.com/nora.jpg" },
+                            "privacy": { "protected": false },
+                            "legacy": { "statuses_count": 240 }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "cursor-bottom-000",
+                    "content": { "value": "", "cursorType": "Bottom" }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
