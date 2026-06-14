@@ -94,15 +94,16 @@ viewBtn.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('results/results.html') });
 });
 
-// Live progress from the content script.
-chrome.runtime.onMessage.addListener((msg) => {
-  if (!msg || msg.type !== 'GHOSTLIST_PROGRESS') return;
+function renderProgress(msg) {
+  if (!msg || !msg.phase) return;
   if (msg.phase === 'collecting') {
     setStatus(msg.message || 'Collecting…');
     setBar(10);
+    scanBtn.disabled = true;
   } else if (msg.phase === 'activity') {
+    scanBtn.disabled = true;
     if (msg.total) {
-      setStatus(msg.message);
+      setStatus(msg.message, msg.paused ? 'warn' : '');
       setBar(10 + (70 * (msg.resolved || 0)) / msg.total);
     } else {
       setStatus(msg.message || 'Checking activity…');
@@ -118,4 +119,25 @@ chrome.runtime.onMessage.addListener((msg) => {
     scanBtn.disabled = false;
     setBar(null);
   }
+}
+
+// Live progress from the content script while the popup is open.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === 'GHOSTLIST_PROGRESS') renderProgress(msg);
 });
+
+// Reattach to an in-flight scan: the scan runs in the page (it keeps going when
+// the popup closes), and writes progress to storage. On open, and then on a
+// poll, reflect that state so reopening the popup never looks "reset".
+const ACTIVE_PHASES = new Set(['collecting', 'activity']);
+function reattach() {
+  chrome.storage.local.get('ghostlistProgress', (s) => {
+    const p = s.ghostlistProgress;
+    if (!p) return;
+    const fresh = Date.now() - (p.at || 0) < 20000; // last update < 20s ago
+    if (ACTIVE_PHASES.has(p.phase) && fresh) renderProgress(p);
+    else if (p.phase === 'done') renderProgress(p);
+  });
+}
+reattach();
+setInterval(reattach, 1500);

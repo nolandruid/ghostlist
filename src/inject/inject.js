@@ -173,11 +173,18 @@
           credentials: 'include',
         });
         const body = await res.text();
+        // X returns rate-limit budget on these headers (same-origin => readable).
+        const remaining = Number(res.headers.get('x-rate-limit-remaining'));
+        const reset = Number(res.headers.get('x-rate-limit-reset')); // epoch seconds
         if (res.status !== 200) {
           console.log('%c[ghostlist:inject]', 'color:#f4212e;font-weight:bold',
             `replay UserTweets http=${res.status} for userId=${d.userId}; head=${body.slice(0, 160)}`);
         }
-        post('replayResult', { reqId: d.reqId, op: 'UserTweets', userId: d.userId, body, status: res.status });
+        post('replayResult', {
+          reqId: d.reqId, op: 'UserTweets', userId: d.userId, body, status: res.status,
+          remaining: Number.isFinite(remaining) ? remaining : null,
+          reset: Number.isFinite(reset) ? reset : null,
+        });
       } catch (err) {
         post('replayResult', { reqId: d.reqId, error: String(err && err.message || err) });
       }

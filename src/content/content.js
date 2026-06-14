@@ -140,10 +140,23 @@
         }
       }
 
+      // Apply the persistent activity cache so we never re-fetch a resolved
+      // account (key present => resolved, value may be null = "no recent posts").
+      const cache = (await chrome.storage.local.get('ghostlistActivity')).ghostlistActivity || {};
+      let cachedApplied = 0;
+      for (const a of accounts) {
+        if (!a.lastActivityAt && Object.prototype.hasOwnProperty.call(cache, a.restId)) {
+          a.lastActivityAt = cache[a.restId];
+          cachedApplied++;
+        }
+      }
+      log(`applied ${cachedApplied} cached activity results from previous runs`);
+
       const needActivity = accounts.filter(
-        (a) => !a.lastActivityAt && !a.protectedAccount && a.statusesCount !== 0
+        (a) => !a.lastActivityAt && !a.protectedAccount && a.statusesCount !== 0 &&
+          !Object.prototype.hasOwnProperty.call(cache, a.restId)
       );
-      log(`${needActivity.length} accounts need an activity lookup`);
+      log(`${needActivity.length} accounts still need an activity lookup`);
 
       if (!canReplay && needActivity.length) {
         log('NO UserTweets template (live or saved). Open ANY profile once so X issues a UserTweets request, then rescan — it will be remembered from now on.');
@@ -151,50 +164,84 @@
       }
 
       if (canReplay && needActivity.length) {
-        let ok = 0;
-        let failed = 0;
-        for (let i = 0; i < needActivity.length; i++) {
-          const a = needActivity[i];
+        // One run targets roughly a single rate window so it finishes in minutes;
+        // progress is cached, so re-running continues where this left off.
+        const MAX_PER_RUN = 400;
+        const BASE_PACE = 800;       // ms between successful calls
+        const HARD_WAIT_CAP = 16 * 60 * 1000;
+        const batch = needActivity.slice(0, MAX_PER_RUN);
+        const remainingAfter = needActivity.length - batch.length;
+
+        let rateRemaining = null;
+        let rateReset = null;        // epoch seconds
+        let ok = 0, nullCount = 0, errCount = 0, persistPending = 0;
+
+        const waitForReset = async (why) => {
+          const ms = rateReset ? (rateReset * 1000 - Date.now()) : 60000;
+          const wait = Math.min(Math.max(ms, 5000) + 2000, HARD_WAIT_CAP);
+          const secs = Math.ceil(wait / 1000);
+          log(`${why} — waiting ${secs}s for X's rate window to reset`);
+          progress({ phase: 'activity', found: accounts.length, resolved: ok + nullCount, total: batch.length, paused: true, message: `Rate limit reached — pausing ${secs}s for reset…` });
+          await sleep(wait);
+          rateRemaining = null; // window has reset; let the next call re-measure
+        };
+
+        for (let i = 0; i < batch.length; i++) {
+          const a = batch[i];
+
+          // Proactive pacing: if the window is nearly spent, pause until reset.
+          if (rateRemaining != null && rateRemaining <= 2) await waitForReset('budget nearly spent');
+
           progress({
-            phase: 'activity',
-            found: accounts.length,
-            resolved: i,
-            total: needActivity.length,
-            message: `Checking activity ${i + 1}/${needActivity.length}…`,
+            phase: 'activity', found: accounts.length,
+            resolved: ok + nullCount, total: batch.length,
+            message: `Checking activity ${i + 1}/${batch.length}${remainingAfter ? ` (+${remainingAfter} next run)` : ''}…`,
           });
+
           let res = await sendCmd('replayUserTweets', { userId: a.restId, count: 20 });
-          // Rate-limited? Back off progressively and retry a couple of times.
-          let backoff = 0;
-          while (res && res.status === 429 && backoff < 3) {
-            const wait = 15000 * (backoff + 1);
-            log(`rate-limited (429); backing off ${wait / 1000}s then retrying @${a.handle}`);
-            progress({ phase: 'activity', found: accounts.length, resolved: i, total: needActivity.length, message: `Rate-limited — pausing ${wait / 1000}s…` });
-            await sleep(wait);
+          if (res && res.remaining != null) rateRemaining = res.remaining;
+          if (res && res.reset != null) rateReset = res.reset;
+
+          // True rate-limit handling: wait until the real reset, then retry once.
+          let tries = 0;
+          while (res && res.status === 429 && tries < 4) {
+            await waitForReset('rate-limited (429)');
             res = await sendCmd('replayUserTweets', { userId: a.restId, count: 20 });
-            backoff++;
+            if (res && res.remaining != null) rateRemaining = res.remaining;
+            if (res && res.reset != null) rateReset = res.reset;
+            tries++;
           }
-          if (res && res.body) {
+
+          if (res && res.status === 200 && res.body) {
             try {
-              const json = JSON.parse(res.body);
-              const at = parseLatestActivity(json);
+              const at = parseLatestActivity(JSON.parse(res.body));
               a.lastActivityAt = at;
-              if (at) ok++; else failed++;
-              if (i < 3) {
-                // Loud diagnostics for the first few so we can see X's actual reply.
-                log(`replay @${a.handle} (id ${a.restId}): http=${res.status} parsedActivity=${at || 'null'}`);
-                if (json && json.errors) log(`  X returned errors: ${JSON.stringify(json.errors).slice(0, 300)}`);
-              }
+              cache[a.restId] = at;       // cache success even if null
+              persistPending++;
+              if (at) ok++; else nullCount++;
+              if (i < 3) log(`replay @${a.handle}: http=200 parsedActivity=${at || 'null'}`);
             } catch (e) {
-              failed++;
-              if (i < 3) log(`replay @${a.handle}: body not JSON / parse error: ${e.message}; status=${res.status}; head=${String(res.body).slice(0, 120)}`);
+              errCount++;
+              if (i < 3) log(`replay @${a.handle}: parse error ${e.message}`);
             }
           } else {
-            failed++;
-            if (i < 3) log(`replay @${a.handle}: no body (error=${res && res.error}, timeout=${res && res.timeout}, status=${res && res.status})`);
+            errCount++;
+            if (i < 3) log(`replay @${a.handle}: status=${res && res.status} error=${res && res.error}`);
           }
-          await sleep(jitter(1100)); // be gentle on rate limits
+
+          // Persist the cache periodically so an interruption loses almost nothing.
+          if (persistPending >= 5) {
+            await chrome.storage.local.set({ ghostlistActivity: cache });
+            persistPending = 0;
+          }
+          await sleep(jitter(BASE_PACE));
         }
-        log(`activity resolution done: ${ok} resolved, ${failed} failed/empty`);
+
+        await chrome.storage.local.set({ ghostlistActivity: cache });
+        log(`activity resolution: ${ok} dated, ${nullCount} no-posts, ${errCount} errors; ${remainingAfter} left for next run`);
+        if (remainingAfter > 0) {
+          progress({ phase: 'activity', message: `Resolved ${batch.length}. ${remainingAfter} remain — run again to continue.` });
+        }
       }
 
       // --- classify + persist ---
