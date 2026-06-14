@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Ghostlist — find inactive accounts you follow",
+  "version": "0.1.0",
+  "description": "Lists the inactive ('ghost') accounts you follow on X/Twitter so you can unfollow them yourself. Read-only — it never unfollows for you.",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Ghostlist",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["https://x.com/*", "https://twitter.com/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject/inject.js", "lib/*.js"],
+      "matches": ["https://x.com/*", "https://twitter.com/*"]
+    }
+  ]
+}

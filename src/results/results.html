@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ghostlist — inactive accounts you follow</title>
+  <link rel="stylesheet" href="../ui.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>👻 Ghostlist</h1>
+      <div class="muted" id="meta"></div>
+    </div>
+
+    <div class="counts" id="counts"></div>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Filter by name or @handle…">
+      <select id="filter">
+        <option value="all">All inactive</option>
+        <option value="never">Never posted</option>
+        <option value="dormant">Dormant (has old posts)</option>
+        <option value="unknown">Unknown (couldn't check)</option>
+      </select>
+      <label class="muted" style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="hideDone"> Hide checked-off
+      </label>
+      <span style="flex:1"></span>
+      <button class="btn secondary" id="export">Export CSV</button>
+      <button class="btn secondary" id="openSel">Open checked profiles</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28px"><input type="checkbox" id="selAll" title="Select all shown"></th>
+          <th data-sort="name">Account</th>
+          <th data-sort="months" data-dir="desc">Inactive for</th>
+          <th data-sort="last">Last post</th>
+          <th data-sort="reason">Why</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <div class="empty" id="empty" style="display:none"></div>
+
+    <p class="foot muted">
+      Ghostlist is read-only. Click a handle to open the profile in a new tab and unfollow manually.
+      “Checked-off” state is saved locally so you can work through the list across sessions.
+      Activity is based on the most recent visible post (pinned posts are ignored); protected accounts
+      can’t be checked and are listed as Unknown.
+    </p>
+  </div>
+  <script type="module" src="results.js"></script>
+</body>
+</html>

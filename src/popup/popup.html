@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="../ui.css">
+</head>
+<body>
+  <div class="popup">
+    <h1>👻 Ghostlist</h1>
+    <p class="sub muted">Find inactive accounts you follow. You unfollow them yourself — this never does it for you.</p>
+
+    <div class="field">
+      <label class="title">Count as inactive after</label>
+      <div class="seg" id="threshold">
+        <label><input type="radio" name="months" value="6" checked><span>6+ months</span></label>
+        <label><input type="radio" name="months" value="12"><span>12+ months</span></label>
+      </div>
+    </div>
+
+    <button class="btn" id="scan" style="width:100%">Scan my Following list</button>
+
+    <div class="status" id="status"></div>
+    <div class="bar" id="bar"><i></i></div>
+
+    <button class="btn secondary" id="view" style="width:100%; margin-top:12px; display:none">View last results</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
