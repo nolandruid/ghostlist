@@ -35,7 +35,7 @@
     if (!d || d.source !== TAG) return;
     if (d.kind === 'response' && d.op === 'Following') {
       followingResponses.push(d.body);
-    } else if (d.kind === 'replayResult' || d.kind === 'capabilities' || d.kind === 'templateLoaded') {
+    } else if (d.kind === 'replayResult' || d.kind === 'capabilities' || d.kind === 'templateLoaded' || d.kind === 'batchResult') {
       const resolve = pending.get(d.reqId);
       if (resolve) { pending.delete(d.reqId); resolve(d); }
     } else if (d.kind === 'template' && d.op) {
@@ -155,11 +155,66 @@
       }
       log(`applied ${cachedApplied} cached activity results from previous runs`);
 
-      const needActivity = accounts.filter(
-        (a) => !a.lastActivityAt && !a.protectedAccount && a.statusesCount !== 0 &&
-          !Object.prototype.hasOwnProperty.call(cache, a.restId)
-      );
+      const stillNeeds = (a) => !a.lastActivityAt && !a.protectedAccount && a.statusesCount !== 0 &&
+        !Object.prototype.hasOwnProperty.call(cache, a.restId);
+      let needActivity = accounts.filter(stillNeeds);
       log(`${needActivity.length} accounts still need an activity lookup`);
+
+      // --- FAST PATH: batch users/lookup (up to 100 accounts per call) ---
+      // Resolves last-activity ~100x more efficiently than per-user UserTweets.
+      // If the endpoint is unavailable for this session, we fall back below.
+      if (needActivity.length && caps.hasAuth) {
+        const { parseUsersLookup } = await import(libBase('parse-users-lookup.js'));
+        const chunks = [];
+        for (let i = 0; i < needActivity.length; i += 100) chunks.push(needActivity.slice(i, i + 100));
+        let resolved = 0, pendingSave = 0, rateReset = null, batchOk = true;
+
+        for (let c = 0; c < chunks.length; c++) {
+          if (cancelRequested) { batchOk = false; break; }
+          const chunk = chunks[c];
+          progress({ phase: 'activity', found: accounts.length, resolved, total: needActivity.length,
+            message: `Fast batch lookup ${c + 1}/${chunks.length} (100 at a time)…` });
+
+          let res = await sendCmd('batchUsersLookup', { userIds: chunk.map((a) => a.restId) });
+          if (res && res.reset != null) rateReset = res.reset;
+          let tries = 0;
+          while (res && res.status === 429 && tries < 4) {
+            const ms = rateReset ? rateReset * 1000 - Date.now() : 60000;
+            const wait = Math.min(Math.max(ms, 5000) + 2000, 16 * 60 * 1000);
+            log(`batch rate-limited; waiting ${Math.ceil(wait / 1000)}s for reset`);
+            progress({ phase: 'activity', found: accounts.length, resolved, total: needActivity.length, paused: true, message: `Rate limit — pausing ${Math.ceil(wait / 1000)}s…` });
+            const until = Date.now() + wait;
+            while (Date.now() < until && !cancelRequested) await sleep(1000);
+            res = await sendCmd('batchUsersLookup', { userIds: chunk.map((a) => a.restId) });
+            if (res && res.reset != null) rateReset = res.reset;
+            tries++;
+          }
+
+          if (!res || res.status !== 200 || !res.body) {
+            log(`batch users/lookup unavailable (status=${res && res.status}, error=${res && res.error}); falling back to per-account method`);
+            batchOk = false;
+            break;
+          }
+          let map;
+          try { map = parseUsersLookup(JSON.parse(res.body)); }
+          catch (e) { log(`batch parse error: ${e.message}; falling back`); batchOk = false; break; }
+
+          for (const a of chunk) {
+            if (Object.prototype.hasOwnProperty.call(map, a.restId)) {
+              a.lastActivityAt = map[a.restId];
+              cache[a.restId] = map[a.restId];
+              resolved++; pendingSave++;
+            }
+          }
+          if (c === 0) log(`✅ batch users/lookup works — resolved ${resolved} in ONE call (${chunks.length} calls will cover all ${needActivity.length})`);
+          if (pendingSave >= 200) { await chrome.storage.local.set({ ghostlistActivity: cache }); pendingSave = 0; }
+          await sleep(jitter(500));
+        }
+        await chrome.storage.local.set({ ghostlistActivity: cache });
+        if (resolved) log(`batch resolution: ${resolved} accounts resolved via users/lookup`);
+        needActivity = accounts.filter(stillNeeds); // leftovers for the fallback
+        log(`${needActivity.length} accounts remain after batch`);
+      }
 
       if (!canReplay && needActivity.length) {
         log('NO UserTweets template (live or saved). Open ANY profile once so X issues a UserTweets request, then rescan — it will be remembered from now on.');

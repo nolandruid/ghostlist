@@ -155,6 +155,32 @@
       return;
     }
 
+    // Batch last-activity via the legacy users/lookup endpoint (up to 100 ids).
+    if (d.kind === 'batchUsersLookup') {
+      if (!freshAuthHeaders) { post('batchResult', { reqId: d.reqId, error: 'no-auth' }); return; }
+      try {
+        const ids = (d.userIds || []).join(',');
+        // Same-origin proxy path so cookies + auth headers apply (no CORS).
+        const url = `${window.location.origin}/i/api/1.1/users/lookup.json?user_id=${encodeURIComponent(ids)}&tweet_mode=extended`;
+        const res = await origFetch(url, { method: 'GET', headers: freshAuthHeaders, credentials: 'include' });
+        const body = await res.text();
+        const remaining = Number(res.headers.get('x-rate-limit-remaining'));
+        const reset = Number(res.headers.get('x-rate-limit-reset'));
+        if (res.status !== 200) {
+          console.log('%c[ghostlist:inject]', 'color:#f4212e;font-weight:bold',
+            `batch users/lookup http=${res.status}; head=${body.slice(0, 160)}`);
+        }
+        post('batchResult', {
+          reqId: d.reqId, body, status: res.status,
+          remaining: Number.isFinite(remaining) ? remaining : null,
+          reset: Number.isFinite(reset) ? reset : null,
+        });
+      } catch (err) {
+        post('batchResult', { reqId: d.reqId, error: String(err && err.message || err) });
+      }
+      return;
+    }
+
     if (d.kind === 'replayUserTweets') {
       const tpl = templates['UserTweets'];
       if (!tpl) { post('replayResult', { reqId: d.reqId, error: 'no-template' }); return; }
