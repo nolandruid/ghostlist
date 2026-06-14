@@ -4,6 +4,7 @@ const bar = $('#bar');
 const barFill = bar.querySelector('i');
 const scanBtn = $('#scan');
 const viewBtn = $('#view');
+const stopBtn = $('#stop');
 
 function setStatus(html, cls = '') {
   statusEl.className = `status ${cls}`;
@@ -94,8 +95,18 @@ viewBtn.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('results/results.html') });
 });
 
+stopBtn.addEventListener('click', async () => {
+  stopBtn.disabled = true;
+  setStatus('Stopping… (saving progress)', 'warn');
+  const tab = await activeTab();
+  try { if (tab) await chrome.tabs.sendMessage(tab.id, { type: 'GHOSTLIST_CANCEL' }); } catch { /* tab gone */ }
+  setTimeout(() => { stopBtn.disabled = false; }, 1500);
+});
+
 function renderProgress(msg) {
   if (!msg || !msg.phase) return;
+  const active = msg.phase === 'collecting' || msg.phase === 'activity';
+  stopBtn.style.display = active ? 'block' : 'none';
   if (msg.phase === 'collecting') {
     setStatus(msg.message || 'Collecting…');
     setBar(10);

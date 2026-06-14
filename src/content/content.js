@@ -70,10 +70,12 @@
 
   // ---- scan -----------------------------------------------------------------
   let scanning = false;
+  let cancelRequested = false;
 
   async function runScan({ thresholdMonths }) {
     if (scanning) return;
     scanning = true;
+    cancelRequested = false;
     log(`scan started — threshold ${thresholdMonths}+ months, url=${location.href}`);
     try {
       const libBase = (p) => chrome.runtime.getURL(`lib/${p}`);
@@ -99,6 +101,7 @@
       let lastCount = 0;
       const MAX_SCROLLS = 600; // hard cap (~ tens of thousands of follows)
       for (let i = 0; i < MAX_SCROLLS; i++) {
+        if (cancelRequested) { log('cancelled during collection'); break; }
         window.scrollTo(0, document.documentElement.scrollHeight);
         await sleep(jitter(900));
         mergeFromBuffer();
@@ -182,11 +185,14 @@
           const secs = Math.ceil(wait / 1000);
           log(`${why} — waiting ${secs}s for X's rate window to reset`);
           progress({ phase: 'activity', found: accounts.length, resolved: ok + nullCount, total: batch.length, paused: true, message: `Rate limit reached — pausing ${secs}s for reset…` });
-          await sleep(wait);
+          // Interruptible wait so Stop works during a long pause.
+          const until = Date.now() + wait;
+          while (Date.now() < until && !cancelRequested) await sleep(1000);
           rateRemaining = null; // window has reset; let the next call re-measure
         };
 
         for (let i = 0; i < batch.length; i++) {
+          if (cancelRequested) { log('cancelled during activity resolution'); break; }
           const a = batch[i];
 
           // Proactive pacing: if the window is nearly spent, pause until reset.
@@ -259,9 +265,13 @@
         unknown: buckets.unknown,
       };
       await chrome.storage.local.set({ ghostlistResult: result });
-      log(`done — inactive=${result.counts.inactive} active=${result.counts.active} unknown=${result.counts.unknown} total=${result.counts.total}`);
-      progress({ phase: 'done', ...result.counts });
-      chrome.runtime.sendMessage({ type: 'GHOSTLIST_OPEN_RESULTS' }).catch(() => {});
+      log(`${cancelRequested ? 'stopped' : 'done'} — inactive=${result.counts.inactive} active=${result.counts.active} unknown=${result.counts.unknown} total=${result.counts.total}`);
+      if (cancelRequested) {
+        progress({ phase: 'done', ...result.counts, message: `Stopped. Partial results saved (${result.counts.inactive} ghosts so far).` });
+      } else {
+        progress({ phase: 'done', ...result.counts });
+        chrome.runtime.sendMessage({ type: 'GHOSTLIST_OPEN_RESULTS' }).catch(() => {});
+      }
     } catch (err) {
       progress({ phase: 'error', message: String(err && err.message || err) });
     } finally {
@@ -276,8 +286,13 @@
       sendResponse({ ok: true });
       return true;
     }
+    if (msg && msg.type === 'GHOSTLIST_CANCEL') {
+      if (scanning) { cancelRequested = true; log('cancel requested'); }
+      sendResponse({ ok: true, scanning });
+      return true;
+    }
     if (msg && msg.type === 'GHOSTLIST_PING') {
-      sendResponse({ ok: true, url: location.href });
+      sendResponse({ ok: true, url: location.href, scanning });
       return true;
     }
   });
