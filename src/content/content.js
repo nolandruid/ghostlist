@@ -35,12 +35,17 @@
     if (!d || d.source !== TAG) return;
     if (d.kind === 'response' && d.op === 'Following') {
       followingResponses.push(d.body);
-    } else if (d.kind === 'replayResult') {
+    } else if (d.kind === 'replayResult' || d.kind === 'capabilities' || d.kind === 'templateLoaded') {
       const resolve = pending.get(d.reqId);
       if (resolve) { pending.delete(d.reqId); resolve(d); }
-    } else if (d.kind === 'capabilities') {
-      const resolve = pending.get(d.reqId);
-      if (resolve) { pending.delete(d.reqId); resolve(d); }
+    } else if (d.kind === 'template' && d.op) {
+      // Persist captured templates so a future scan works without re-visiting a
+      // profile. We only need UserTweets (auth headers refresh live each scan).
+      if (d.op === 'UserTweets') {
+        chrome.storage.local.set({
+          ghostlistTpl_UserTweets: { url: d.url, headers: d.headers, method: d.method, savedAt: Date.now() },
+        });
+      }
     }
   });
 
@@ -119,9 +124,21 @@
       log(`collected ${accounts.length} accounts; ${withInline} had inline activity`);
 
       // --- resolve activity for accounts without inline status ---
-      const caps = await sendCmd('capabilities');
-      const canReplay = Array.isArray(caps.ops) && caps.ops.includes('UserTweets');
-      log(`capabilities: templates=[${(caps.ops || []).join(', ') || 'none'}] canReplay=${canReplay}`);
+      let caps = await sendCmd('capabilities');
+      let canReplay = Array.isArray(caps.ops) && caps.ops.includes('UserTweets');
+      log(`capabilities: templates=[${(caps.ops || []).join(', ') || 'none'}] canReplay=${canReplay} hasAuth=${caps.hasAuth}`);
+
+      // If no live UserTweets template, try a persisted one from a past session.
+      if (!canReplay) {
+        const saved = (await chrome.storage.local.get('ghostlistTpl_UserTweets')).ghostlistTpl_UserTweets;
+        if (saved && saved.url) {
+          log(`no live template; restoring saved UserTweets template (saved ${new Date(saved.savedAt).toLocaleString()})`);
+          await sendCmd('loadTemplate', { op: 'UserTweets', template: { url: saved.url, headers: saved.headers, method: saved.method } });
+          caps = await sendCmd('capabilities');
+          canReplay = Array.isArray(caps.ops) && caps.ops.includes('UserTweets');
+          log(`after restore: canReplay=${canReplay}`);
+        }
+      }
 
       const needActivity = accounts.filter(
         (a) => !a.lastActivityAt && !a.protectedAccount && a.statusesCount !== 0
@@ -129,8 +146,8 @@
       log(`${needActivity.length} accounts need an activity lookup`);
 
       if (!canReplay && needActivity.length) {
-        log('NO UserTweets template captured — open any profile once, then navigate to Following (no reload) and rescan. All posted accounts will be "unknown" this run.');
-        progress({ phase: 'activity', message: 'Couldn’t check activity (open a profile first — see console). Listing what we know.' });
+        log('NO UserTweets template (live or saved). Open ANY profile once so X issues a UserTweets request, then rescan — it will be remembered from now on.');
+        progress({ phase: 'activity', message: 'Open any profile once, then rescan (see console). Listing what we know.' });
       }
 
       if (canReplay && needActivity.length) {
@@ -145,7 +162,17 @@
             total: needActivity.length,
             message: `Checking activity ${i + 1}/${needActivity.length}…`,
           });
-          const res = await sendCmd('replayUserTweets', { userId: a.restId, count: 20 });
+          let res = await sendCmd('replayUserTweets', { userId: a.restId, count: 20 });
+          // Rate-limited? Back off progressively and retry a couple of times.
+          let backoff = 0;
+          while (res && res.status === 429 && backoff < 3) {
+            const wait = 15000 * (backoff + 1);
+            log(`rate-limited (429); backing off ${wait / 1000}s then retrying @${a.handle}`);
+            progress({ phase: 'activity', found: accounts.length, resolved: i, total: needActivity.length, message: `Rate-limited — pausing ${wait / 1000}s…` });
+            await sleep(wait);
+            res = await sendCmd('replayUserTweets', { userId: a.restId, count: 20 });
+            backoff++;
+          }
           if (res && res.body) {
             try {
               const json = JSON.parse(res.body);
